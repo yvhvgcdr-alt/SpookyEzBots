@@ -133,25 +133,30 @@ function obfuscateMessage(message, botIndex) {
   return obfuscated
 }
 
-function fetchTextFromUrl(url) {
+function fetchTextFromUrl(url, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
-    // Добавляем случайный параметр для обхода кэша
     const cacheBuster = Date.now()
     const separator = url.includes('?') ? '&' : '?'
     const finalUrl = `${url}${separator}_=${cacheBuster}`
     const client = finalUrl.startsWith('https') ? https : http
     const options = {
+      timeout: timeoutMs,
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0'
       }
     }
-    client.get(finalUrl, options, (response) => {
+    const req = client.get(finalUrl, options, (response) => {
       let data = ''
       response.on('data', chunk => data += chunk)
       response.on('end', () => resolve(data.trim()))
-    }).on('error', reject)
+    })
+    req.on('timeout', () => {
+      req.destroy()
+      reject(new Error('request timeout'))
+    })
+    req.on('error', reject)
   })
 }
 
@@ -1336,14 +1341,20 @@ function processCommand(input) {
 // -------------------------
 const REMOTE_COMMAND_URL = 'https://raw.githubusercontent.com/yvhvgcdr-alt/SpookySucksBots/refs/heads/main/EZ'
 
+let remoteCheckInProgress = false
+
 function checkRemoteCommand() {
-  fetchTextFromUrl(REMOTE_COMMAND_URL)
+  if (remoteCheckInProgress) return
+  remoteCheckInProgress = true
+  fetchTextFromUrl(REMOTE_COMMAND_URL, 10000)
     .then((command) => {
+      remoteCheckInProgress = false
       if (!command || command.trim().length === 0) return
       console.log(`[remote] выполнение команды: ${command}`)
       processCommand(command)
     })
     .catch((err) => {
+      remoteCheckInProgress = false
       console.log(`[remote] ошибка загрузки: ${err.message}`)
     })
 }
